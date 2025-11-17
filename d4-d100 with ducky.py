@@ -2,8 +2,9 @@ import time
 import datetime as dt
 import numpy as np
 import duckdb
+import pandas as pd
 
-DB_FILE = '/Users/alexbielanski/DIce Rolling Sim/runs 2.0'
+DB_FILE = "runs_1_0.duckdb"
 TABLE_NAME = "runs"
 CHECK_EVERY = 100_000
 P_SUCCESS = 1.0 / (4*6*8*10*12*20*100)
@@ -28,27 +29,28 @@ def main():
     total_generated = 0
 
     while True:
-        # generate a full batch
         trials = rng.geometric(P_SUCCESS, size=CHECK_EVERY)
         ts = dt.datetime.now().isoformat()
 
-        # convert to DuckDB in-memory table using vectorization
-        df = duckdb.from_df({
+        # Create real DataFrame
+        df = pd.DataFrame({
             "run_index": np.arange(run_index, run_index + len(trials)),
             "trials": trials,
             "batch_timestamp": [ts] * len(trials)
         })
 
-        # find FIRST success inside the batch
+        # Register it for SQL
+        con.register("df", df)
+
+        # Check for success
         success_idx = np.where(trials == 1)[0]
         if success_idx.size > 0:
             stop = success_idx[0]
-            df = df.limit(stop + 1)
-            con.execute(f"INSERT INTO {TABLE_NAME} SELECT * FROM df")
+            con.execute(f"INSERT INTO {TABLE_NAME} SELECT * FROM df LIMIT {stop + 1}")
             print(f"Success at run {run_index + stop:,}")
             break
 
-        # normal batch insert
+        # Insert the whole batch normally
         con.execute(f"INSERT INTO {TABLE_NAME} SELECT * FROM df")
 
         run_index += CHECK_EVERY
